@@ -18,7 +18,7 @@ Details such like:
 All experiments are run with 4 RTX3090(24GB) GPUs.
 
 ## Data Preparation
-1.受限于github大小限制,请从[google drive](https://drive.google.com/drive/folders/1JR9KMjALZ_lJvp1oMQoi6XF4RYhRbCbF?usp=sharing)中下载数据集(FB15K-237,CN-100K,Kinships,WN18RR,YAGO3-10,UML.),让后将其保存为如下格式：
+1. Due to the size limit of github, please download the dataset (FB15K-237, CN-100K, Kinships, WN18RR, YAGO3-10, UML.) from [google drive](https://drive.google.com/drive/folders/1JR9KMjALZ_lJvp1oMQoi6XF4RYhRbCbF?usp=sharing) and save it in the following format:
 - MRME-KGC
     - model
         - manifolds
@@ -34,7 +34,7 @@ All experiments are run with 4 RTX3090(24GB) GPUs.
         - WN18RR
 	    - YAGO3-10
 
-2.在完成了上述步骤后,请运行model文件夹中的"process_datasets.py"文件以生成输入到模型中的KG数据:
+2.After completing the above steps, please run the "process_datasets.py" file in the model folder to generate KG data to be input into the model:
 ```
 cd model/
 python process_datasets.py
