@@ -10,7 +10,7 @@ pip install -r requirement.txt
 Details such like:
 
 * python>=3.8
-* torch>=1.86 (for mixed precision training)
+* torch>=1.8
 * tqdm
 * geoopt
 * sklearn
