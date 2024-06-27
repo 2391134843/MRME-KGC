@@ -56,9 +56,11 @@ bash Run-UML-100d.sh
 ....
 ## Troubleshooting
 1. I encountered "CUDA out of memory" when running the code.
+
 We run experiments with 4 RTX2090(24GB) GPUs, please reduce the batch size if you don't have enough resources.
 
 2. ModuleNotFoundError: No module named 'sklearn'
+
 Please note that the command used to install the 'sklearn' package is: "pip install -U scikit-learn" instead of "pip install -U sklearn". Please pay attention to this problem!
 
 ## Drawing
