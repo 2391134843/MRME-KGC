@@ -18,14 +18,18 @@ EPS = 1e-5
 temperature=0.2
 max_norm=0.5
 max_scale=2
-# import debugpy
-# try:
-#     # 5678 is the default attach port in the VS Code debug configurations. Unless a host and port are specified, host defaults to 127.0.0.1
-#     debugpy.listen(("localhost", 9501))
-#     print("Waiting for debugger attach")
-#     debugpy.wait_for_client()
-# except Exception as e:
-#     pass
+
+
+import debugpy
+try:
+    # 5678 is the default attach port in the VS Code debug configurations. Unless a host and port are specified, host defaults to 127.0.0.1
+    debugpy.listen(("localhost", 9501))
+    print("Waiting for debugger attach")
+    debugpy.wait_for_client()
+except Exception as e:
+    pass
+
+
 class KBCModel(nn.Module, ABC):
     def get_ranking(
             self, queries: torch.Tensor,
@@ -120,17 +124,19 @@ class MRME_KGC(KBCModel):
         self.c1 = nn.Parameter(c_init1, requires_grad=True)
         self.c2 = nn.Parameter(c_init2, requires_grad=True)
 
-    def e_step(self, ent_embeddings, rel_embeddings):
-        user_embeddings = ent_embeddings.detach().cpu().numpy()
-
-        item_embeddings = rel_embeddings.detach().cpu().numpy()
-
-        eStep_ent_embedding_centroids, eStep_ent_embedding_2cluster = self.run_kmeans(user_embeddings)
-        eStep_rel_embedding_centroids, eStep_rel_embedding_2cluster = self.run_kmeans(item_embeddings)
-        # eStep_ent_embedding_centroids, eStep_ent_embedding_2cluster = self.run_hierarchical_clustering(user_embeddings)
-        # eStep_rel_embedding_centroids, eStep_rel_embedding_2cluster = self.run_hierarchical_clustering(item_embeddings)
+    def Anchor_way(self, ent_embeddings, rel_embeddings):
+        # Detach and convert embeddings to numpy arrays
+        embeddings = {
+            'ent': ent_embeddings.detach().cpu().numpy(),
+            'rel': rel_embeddings.detach().cpu().numpy()
+        }
+        
+        # Run k-means for both entity and relation embeddings
+        eStep_ent_embedding_centroids, eStep_ent_embedding_2cluster = self.run_kmeans(embeddings['ent'])
+        eStep_rel_embedding_centroids, eStep_rel_embedding_2cluster = self.run_kmeans(embeddings['rel'])
 
         return eStep_ent_embedding_centroids, eStep_ent_embedding_2cluster, eStep_rel_embedding_centroids, eStep_rel_embedding_2cluster
+
 
     def run_hierarchical_clustering(self, x):
         """Run hierarchical clustering algorithm to get k clusters of the input tensor x
@@ -156,12 +162,37 @@ class MRME_KGC(KBCModel):
         node2cluster = torch.LongTensor(kmeans.labels_).cuda()
         return centroids, node2cluster
 
-    def ProtoNCE_loss(self, ent_embeddings, rel_embeddings):
+    def Contrastive_NCE_loss(self, entity_embeddings, relation_embeddings):
+        temperature = 0.3
+        regularization_term = 8e-8
+        normalized_entity_embeddings = entity_embeddings
+        entity_centroids, entity_to_cluster, relation_centroids, relation_to_cluster = self.Anchor_way(entity_embeddings, relation_embeddings)  # [B,]
+        entity_to_centroids = entity_centroids[entity_to_cluster]  # [B, e]
+        positive_score_entities = torch.mul(normalized_entity_embeddings, entity_to_centroids).sum(dim=1)
+        positive_score_entities = torch.exp(positive_score_entities / temperature)
+        total_score_entities = torch.matmul(normalized_entity_embeddings, entity_centroids.transpose(0, 1))
+        total_score_entities = torch.exp(total_score_entities / temperature).sum(dim=1)
+
+        proto_nce_loss_entities = -torch.log(positive_score_entities / total_score_entities).sum()
+        # ------------------------    -------------------------------------------------
+        normalized_relation_embeddings = relation_embeddings
+        relation_to_centroids = relation_centroids[relation_to_cluster]  # [B, e]
+        positive_score_relations = torch.mul(normalized_relation_embeddings, relation_to_centroids).sum(dim=1)
+        positive_score_relations = torch.exp(positive_score_relations / temperature)
+        total_score_relations = torch.matmul(normalized_relation_embeddings, relation_centroids.transpose(0, 1))
+        total_score_relations = torch.exp(total_score_relations / temperature).sum(dim=1)
+        proto_nce_loss_relations = -torch.log(positive_score_relations / total_score_relations).sum()
+
+        proto_nce_loss = regularization_term * (proto_nce_loss_entities + proto_nce_loss_relations)
+        # proto_nce_loss = regularization_term * (proto_nce_loss_entities)
+        return proto_nce_loss
+
+    def Contrastive_NCE_loss(self, ent_embeddings, rel_embeddings):
         ssl_temp = 0.3
         proto_reg = 8e-8
         norm_ent_embeddings = ent_embeddings
-        ent_centroids, ent_2cluster, rel_centroids, rel_2cluster = self.e_step(ent_embeddings, rel_embeddings)  # [B,]
-        ent_2centroids = ent_centroids[ent_2cluster]  # [B, e]
+        ent_centroids, ent_2cluster, rel_centroids, rel_2cluster = self.Anchor_way(ent_embeddings, rel_embeddings)  # [B,]
+        ent_2centroids = ent_centroids[ent_2cluster]  
         pos_score_user = torch.mul(norm_ent_embeddings, ent_2centroids).sum(dim=1)
         pos_score_user = torch.exp(pos_score_user / ssl_temp)
         ttl_score_user = torch.matmul(norm_ent_embeddings, ent_centroids.transpose(0, 1))
@@ -170,7 +201,7 @@ class MRME_KGC(KBCModel):
         proto_nce_loss_user = -torch.log(pos_score_user / ttl_score_user).sum()
         # ------------------------    -------------------------------------------------
         norm_rel_embeddings = rel_embeddings
-        rel_2centroids = rel_centroids[rel_2cluster]  # [B, e]
+        rel_2centroids = rel_centroids[rel_2cluster]  
         pos_score_item = torch.mul(norm_rel_embeddings, rel_2centroids).sum(dim=1)
         pos_score_item = torch.exp(pos_score_item / ssl_temp)
         ttl_score_item = torch.matmul(norm_rel_embeddings, rel_centroids.transpose(0, 1))
@@ -256,7 +287,7 @@ class MRME_KGC(KBCModel):
                    (torch.sqrt(lhs_t[0] ** 2 + lhs_t[1] ** 2),
                     torch.sqrt(rel[0] ** 2 + rel[1] ** 2),
                     torch.sqrt(rhs[0] ** 2 + rhs[1] ** 2))
-               ] ,self.ProtoNCE_loss(res_c1,res_c2)
+               ] ,self.Contrastive_NCE_loss(res_c1,res_c2)
 
 
 
