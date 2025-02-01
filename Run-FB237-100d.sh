@@ -3,10 +3,10 @@
 cd model/
 #!/bin/bash
 
-# 指定使用的GPU设备
+
 export CUDA_VISIBLE_DEVICES=0
 
-# 运行Python脚本，并传入相应的参数
+
 python3 learn.py \
     --dataset FB237 \
     --model MRME_KGC \
